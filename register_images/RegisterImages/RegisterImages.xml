@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<executable>
+  <category>HistomicsTK</category>
+  <title>Register Images</title>
+  <description>Register two images</description>
+  <version>1.0.0</version>
+  <documentation-url>https://digitalslidearchive.github.io/HistomicsTK</documentation-url>
+  <license>Apache 2.0</license>
+  <contributor>David Manthey (Kitware Inc)</contributor>
+  <acknowledgements>This work is part of the Sarder Labs project.</acknowledgements>
+  <parameters>
+    <label>Inputs</label>
+    <description>Input parameters</description>
+    <image>
+      <name>image1</name>
+      <label>First Input Image</label>
+      <description>Input image</description>
+      <channel>input</channel>
+      <index>0</index>
+    </image>
+    <image>
+      <name>image2</name>
+      <label>Second Input Image</label>
+      <description>Input image</description>
+      <channel>input</channel>
+      <index>1</index>
+    </image>
+    <string-enumeration>
+      <name>transform</name>
+      <longflag>transform</longflag>
+      <description>Type of transform to use</description>
+      <label>Transform</label>
+      <default>RIGID_BODY</default>
+      <element>RIGID_BODY</element>
+      <element>AFFINE</element>
+    </string-enumeration>
+    <boolean>
+      <name>progress</name>
+      <longflag>progress</longflag>
+      <description></description>
+      <label>Progress</label>
+      <default>true</default>
+    </boolean>
+
+    <integer>
+      <name>maxResolution</name>
+      <label>Maximum Resolution</label>
+      <description>The maximum resolution used for registration.  Images are downsampled by a power of two so they are no larger than this size in their maximal dimension.</description>
+      <longflag>maxres</longflag>
+      <default>8192</default>
+    </integer>
+    <boolean>
+      <name>threshold</name>
+      <longflag>threshold</longflag>
+      <description>Use thresholding</description>
+      <label>Threshold</label>
+      <default>true</default>
+    </boolean>
+    <double>
+      <name>smallObject</name>
+      <longflag>smallobject</longflag>
+      <description>Size of small objects to remove from thresholded images</description>
+      <label>Small Object Size</label>
+      <default>25</default>
+      <constraints>
+        <minimum>0</minimum>
+        <maximum>1.e3</maximum>
+      </constraints>
+    </double>
+    <double>
+      <name>disk</name>
+      <longflag>disk</longflag>
+      <description>Size of disk to open thresholded images</description>
+      <label>Open Disk Size</label>
+      <default>1</default>
+      <constraints>
+        <minimum>0</minimum>
+        <maximum>1.e3</maximum>
+      </constraints>
+    </double>
+
+    <string>
+      <name>annotationID1</name>
+      <longflag>annotation1</longflag>
+      <label>Annotation ID on First Image</label>
+      <description>If specified, this annotation will be used as a mask for registration</description>
+      <default></default>
+    </string>
+    <string>
+      <name>annotationID2</name>
+      <longflag>annotation2</longflag>
+      <label>Annotation ID on Second Image</label>
+      <description>If specified, this annotation will be used as a mask for registration</description>
+      <default></default>
+    </string>
+  </parameters>
+
+  <parameters>
+    <label>Outputs</label>
+    <description>Output parameters</description>
+    <image fileExtensions=".tiff">
+      <name>outputSecondImage</name>
+      <longflag>outputImage2</longflag>
+      <label>Output Second Image</label>
+      <description>The transformed second image</description>
+      <channel>output</channel>
+    </image>
+    <image fileExtensions=".tiff">
+      <name>outputMergedImage</name>
+      <longflag>outputMergeImage</longflag>
+      <label>Output Merged Image</label>
+      <description>A merged image with the transformed second image and the untransformed first image</description>
+      <channel>output</channel>
+    </image>
+  </parameters>
+
+  <parameters advanced="true">
+    <label>Frame and Style</label>
+    <description>Frame parameters</description>
+    <string>
+      <name>frame1</name>
+      <longflag>frame1</longflag>
+      <label>First Image Frame Index</label>
+      <description>Frame index in a multi-frame image</description>
+      <default>{#control:#current_image_frame#}</default>
+    </string>
+    <string>
+      <name>style1</name>
+      <longflag>style1</longflag>
+      <label>First Image Style Options</label>
+      <description>Image style options for compositing a multi-frame image</description>
+      <default>{#control:#current_image_style#}</default>
+    </string>
+    <string>
+      <name>frame2</name>
+      <longflag>frame2</longflag>
+      <label>Second Image Frame Index</label>
+      <description>Frame index in a multi-frame image</description>
+      <default></default>
+    </string>
+    <string>
+      <name>style2</name>
+      <longflag>style2</longflag>
+      <label>Second Image Style Options</label>
+      <description>Image style options for compositing a multi-frame image</description>
+      <default></default>
+    </string>
+  </parameters>
+
+  <parameters advanced="true">
+    <label>Girder API URL and Key</label>
+    <description>A Girder API URL and token for Girder client</description>
+    <string>
+      <name>girderApiUrl</name>
+      <longflag>api-url</longflag>
+      <label>Girder API URL</label>
+      <description>A Girder API URL (e.g., https://girder.example.com:443/api/v1)</description>
+      <default></default>
+    </string>
+    <string>
+      <name>girderToken</name>
+      <longflag>girder-token</longflag>
+      <label>Girder Token</label>
+      <description>A Girder token</description>
+      <default></default>
+    </string>
+  </parameters>
+</executable>
