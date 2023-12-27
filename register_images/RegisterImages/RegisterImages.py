@@ -159,14 +159,19 @@ def transform_images(ts1, ts2, matrix, out2path=None, outmergepath=None):
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.INFO)
         logger.addHandler(handler)
+        logger = logging.getLogger('large-image-converter')
+        logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.INFO)
+        logger.addHandler(handler)
         if out2path:
             trans2path = os.path.join(tmpdir, 'out2transform.yaml')
             open(trans2path, 'w').write(yaml.dump(trans2))
-            large_image_converter.convert(trans2path, out2path)
+            large_image_converter.convert(trans2path, out2path, predictor='none')
         if outmergepath:
             combopath = os.path.join(tmpdir, 'outmergetransform.yaml')
             open(combopath, 'w').write(yaml.dump(combo))
-            large_image_converter.convert(combopath, outmergepath)
+            large_image_converter.convert(combopath, outmergepath, predictor='none')
 
 
 def main(args):
