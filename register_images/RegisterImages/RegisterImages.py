@@ -12,7 +12,7 @@ import large_image
 import large_image_converter
 import numpy as np
 import pystackreg
-import rasterio
+import rasterio.features
 import shapely
 import skimage.filters
 import skimage.morphology
@@ -48,7 +48,7 @@ def get_image(ts, sizeX, sizeY, frame, annotID, args, reduce):
     if annotID:
         gc = girder_client.GirderClient(apiUrl=args.girderApiUrl)
         gc.token = args.girderToken
-        annot = gc.get(f'annotation/{annotID}')
+        annot = gc.get(f'annotation/{annotID.strip()}')
         img = (rasterio.features.rasterize(
             annotation_to_shapely(annot), out_shape=(sizeY, sizeX)) > 0).astype('bool')
         img = 255.0 * img
@@ -203,7 +203,7 @@ def main(args):
         prog.message('Fetching first image')
         img1 = get_image(ts1, sizeX, sizeY, args.frame1, args.annotationID1, args, reduce)
         prog.message('Fetching second image')
-        img2 = get_image(ts2, sizeX, sizeY, args.frame2, args.annotationID1, args, reduce)
+        img2 = get_image(ts2, sizeX, sizeY, args.frame2, args.annotationID2, args, reduce)
 
         prog.message('Registering')
         sr = pystackreg.StackReg(getattr(
