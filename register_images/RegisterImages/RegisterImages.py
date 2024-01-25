@@ -167,11 +167,11 @@ def transform_images(ts1, ts2, matrix, out2path=None, outmergepath=None):
         if out2path:
             trans2path = os.path.join(tmpdir, 'out2transform.yaml')
             open(trans2path, 'w').write(yaml.dump(trans2))
-            large_image_converter.convert(trans2path, out2path, predictor='none')
+            large_image_converter.convert(trans2path, out2path)
         if outmergepath:
             combopath = os.path.join(tmpdir, 'outmergetransform.yaml')
             open(combopath, 'w').write(yaml.dump(combo))
-            large_image_converter.convert(combopath, outmergepath, predictor='none')
+            large_image_converter.convert(combopath, outmergepath)
 
 
 def main(args):
