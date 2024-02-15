@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<executable>
+  <category>HistomicsTK</category>
+  <title>Annotation Features</title>
+  <description>Calculate image and morphology features based on an annotation</description>
+  <version>1.0.0</version>
+  <documentation-url>https://digitalslidearchive.github.io/HistomicsTK</documentation-url>
+  <license>Apache 2.0</license>
+  <contributor>David Manthey (Kitware Inc)</contributor>
+  <acknowledgements>This work is part of the Sarder Labs project.</acknowledgements>
+  <parameters>
+    <label>Inputs</label>
+    <description>Input parameters</description>
+    <image>
+      <name>image</name>
+      <label>Input Image</label>
+      <description>Input image</description>
+      <channel>input</channel>
+      <index>0</index>
+    </image>
+    <boolean>
+      <name>progress</name>
+      <longflag>progress</longflag>
+      <description></description>
+      <label>Progress</label>
+      <default>true</default>
+    </boolean>
+
+    <string>
+      <name>annotationID</name>
+      <longflag>annotation</longflag>
+      <label>Annotation ID on Image</label>
+      <description>This annotation is used to determine feature areas</description>
+      <default></default>
+    </string>
+  </parameters>
+
+  <parameters>
+    <label>Feature extraction</label>
+    <description>Feature extraction parameters</description>
+    <integer>
+      <name>cyto_width</name>
+      <label>Cytoplasm width</label>
+      <description>Width of ring-like neighborghood region around each nucleus to be considered as cytoplasm</description>
+      <longflag>cyto_width</longflag>
+      <default>8</default>
+    </integer>
+    <integer>
+      <name>clusters</name>
+      <label>K-Means Clusters</label>
+      <description>Number of clusters to label; 0 attempts to pick automatically</description>
+      <longflag>clusters</longflag>
+      <default>0</default>
+    </integer>
+  </parameters>
+
+  <parameters>
+    <label>Outputs</label>
+    <description>Output parameters</description>
+    <image fileExtensions=".csv">
+      <name>featureFile</name>
+      <longflag>featureFile</longflag>
+      <label>Output Feature File</label>
+      <description>A CSV with all of the features</description>
+      <channel>output</channel>
+    </image>
+    <file fileExtensions=".anot" reference="image">
+      <name>outputAnnotationFile</name>
+      <label>Output Annotation File</label>
+      <description>Output annotation file (*.anot)</description>
+      <channel>output</channel>
+      <index>1</index>
+    </file>
+    <file fileExtensions=".json" reference="image">
+      <name>outputItemMetadata</name>
+      <label>Output Item Metadata</label>
+      <description>Output json metadata file (*.json)</description>
+      <channel>output</channel>
+      <index>2</index>
+    </file>
+  </parameters>
+
+  <parameters advanced="true">
+    <label>Frame and Style</label>
+    <description>Frame parameters</description>
+    <string>
+      <name>frame</name>
+      <longflag>frame</longflag>
+      <label>Image Frame Index</label>
+      <description>Frame index in a multi-frame image</description>
+      <default>{#control:#current_image_frame#}</default>
+    </string>
+    <string>
+      <name>style</name>
+      <longflag>style</longflag>
+      <label>Image Style Options</label>
+      <description>Image style options for compositing a multi-frame image</description>
+      <default>{#control:#current_image_style#}</default>
+    </string>
+  </parameters>
+
+  <parameters advanced="true">
+    <label>Girder API URL and Key</label>
+    <description>A Girder API URL and token for Girder client</description>
+    <string>
+      <name>girderApiUrl</name>
+      <longflag>api-url</longflag>
+      <label>Girder API URL</label>
+      <description>A Girder API URL (e.g., https://girder.example.com:443/api/v1)</description>
+      <default></default>
+    </string>
+    <string>
+      <name>girderToken</name>
+      <longflag>girder-token</longflag>
+      <label>Girder Token</label>
+      <description>A Girder token</description>
+      <default></default>
+    </string>
+  </parameters>
+</executable>

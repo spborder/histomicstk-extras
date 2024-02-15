@@ -24,10 +24,11 @@ COPY . /opt/main
 WORKDIR /opt/main
 RUN python -m pip install -e . --find-links https://girder.github.io/large_image_wheels
 
-WORKDIR /opt/main/register_images
+WORKDIR /opt/main/histomicstk_extras
 
 RUN python -m slicer_cli_web.cli_list_entrypoint --list_cli
 RUN python -m slicer_cli_web.cli_list_entrypoint RegisterImages --help
+RUN python -m slicer_cli_web.cli_list_entrypoint AnnotationFeatures --help
 
 # This makes the results show up in a more timely manner
 ENV PYTHONUNBUFFERED=TRUE

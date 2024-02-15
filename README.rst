@@ -1,6 +1,11 @@
-Register Images
-===============
+HistomicsTK Extras
+==================
+
+This includes a number of algorithms:
+
+- Register Images
+- Annotation Features
 
 This can be built like so::
 
-    docker build --force-rm -t dsarchive/register_images .
+    docker build --force-rm -t dsarchive/histomicstk_extras .
