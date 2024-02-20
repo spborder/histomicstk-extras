@@ -158,7 +158,13 @@ def main(args):  # noqa
     print(f'Doing k-means with {bestn} clusters.')
     kmeans_labels = sklearn.cluster.KMeans(n_clusters=bestn).fit_predict(df)
     print(kmeans_labels)
-    fit = umap.UMAP()
+    # Add the cluster labels to the data we use with umap/tsne
+    df['Cluster'] = kmeans_labels
+    fit = umap.UMAP(
+        min_dist=0.01,
+        n_neighbors=5,
+        # metric='wminkowski',
+    )
     umapVal = fit.fit_transform(df)
     print(umapVal)
     tsne = sklearn.manifold.TSNE(n_components=2, random_state=0)
@@ -178,7 +184,7 @@ def main(args):  # noqa
     colorBrewerPaired12 = [
         '#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c',
         '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
-    colors = viridis + colorBrewerPaired12 + [
+    colors = colorBrewerPaired12 + viridis + [
         matplotlib.colors.rgb2hex(c) for c in plt.get_cmap('tab20c').colors]
     colorsa = [f'rgba({int(c[1:3], 16)}, {int(c[3:5], 16)}, {int(c[5:6], 16)}, 0.5)'
                for c in colors]
