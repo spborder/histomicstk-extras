@@ -137,6 +137,8 @@ def main(args):  # noqa
     print(totaldf)
     print(totaldf.columns.tolist())
     totaldf.to_csv(args.featureFile, index=False)
+    df = totaldf.drop(columns={
+        key for key in totaldf.columns if key.startswith(('Label', 'Identifier'))})
     # Calculate kmeans; if clusters is 0, guess
     if args.clusters < 2:
         lastsil = 10
@@ -144,8 +146,8 @@ def main(args):  # noqa
         for n_clusters in range(2, 21):
             model = sklearn.cluster.KMeans(
                 n_clusters=n_clusters, init='k-means++', max_iter=100, n_init=1)
-            labels = model.fit_predict(totaldf)
-            sil_score = sklearn.metrics.silhouette_score(totaldf, labels)
+            labels = model.fit_predict(df)
+            sil_score = sklearn.metrics.silhouette_score(df, labels)
             print('The average silhouette score for %i clusters is %0.4f' % (n_clusters, sil_score))
             if sil_score > lastsil:
                 bestn = n_clusters
@@ -154,13 +156,13 @@ def main(args):  # noqa
     else:
         bestn = args.clusters
     print(f'Doing k-means with {bestn} clusters.')
-    kmeans_labels = sklearn.cluster.KMeans(n_clusters=bestn).fit_predict(totaldf)
+    kmeans_labels = sklearn.cluster.KMeans(n_clusters=bestn).fit_predict(df)
     print(kmeans_labels)
     fit = umap.UMAP()
-    umapVal = fit.fit_transform(totaldf)
+    umapVal = fit.fit_transform(df)
     print(umapVal)
     tsne = sklearn.manifold.TSNE(n_components=2, random_state=0)
-    tsneVal = tsne.fit_transform(totaldf)
+    tsneVal = tsne.fit_transform(df)
     print(tsneVal)
     # We want to add umap and cluster labels to dataframe and resave
     totaldf['Cluster'] = kmeans_labels
@@ -170,9 +172,16 @@ def main(args):  # noqa
     totaldf['tsne.y'] = tsneVal[:, 1]
 
     # outputNucleiAnnotationFile
-    colors = [matplotlib.colors.rgb2hex(c) for c in plt.get_cmap('tab20c').colors]
-    colorsa = [f'rgba({int(c[0] * 255)}, {int(c[1] * 255)}, {int(c[2] * 255)}, 0.25)'
-               for c in plt.get_cmap('tab20c').colors]
+    viridis = [
+        '#440154', '#482172', '#423d84', '#38578c', '#2d6f8e', '#24858d',
+        '#1e9a89', '#2ab07e', '#51c468', '#86d449', '#c2df22', '#fde724']
+    colorBrewerPaired12 = [
+        '#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c',
+        '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928']
+    colors = viridis + colorBrewerPaired12 + [
+        matplotlib.colors.rgb2hex(c) for c in plt.get_cmap('tab20c').colors]
+    colorsa = [f'rgba({int(c[1:3], 16)}, {int(c[3:5], 16)}, {int(c[5:6], 16)}, 0.5)'
+               for c in colors]
     elements = []
     mlist = []
     meta = {'features': mlist}
