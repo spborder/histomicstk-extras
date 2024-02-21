@@ -4,7 +4,7 @@ jobs:
   publish_docker:
     working_directory: ~/project
     machine:
-      image: ubuntu-2004:202111-02
+      image: ubuntu-2204:current
     steps:
       - checkout
       - run:
@@ -31,4 +31,4 @@ workflows:
               only: /^v.*/
             branches:
               only:
-                - main
+                - master
