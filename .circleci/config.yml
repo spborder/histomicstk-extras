@@ -9,15 +9,15 @@ jobs:
       - checkout
       - run:
           name: Build docker
-          command: docker build --force-rm -t dsarchive/histomicstk_extra .
+          command: docker build --force-rm -t dsarchive/histomicstk_extras .
       - run:
           name: Publish images to Docker Hub
           command: |
               echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-              docker push dsarchive/histomicstk_extra:latest
+              docker push dsarchive/histomicstk_extras:latest
               if [[ $CIRCLE_TAG =~ ^v.*$ ]]; then
-              docker tag dsarchive/histomicstk_extra:latest "dsarchive/histomicstk_extra:$CIRCLE_TAG"
-              docker push "dsarchive/histomicstk_extra:$CIRCLE_TAG"
+              docker tag dsarchive/histomicstk_extras:latest "dsarchive/histomicstk_extras:$CIRCLE_TAG"
+              docker push "dsarchive/histomicstk_extras:$CIRCLE_TAG"
               fi
 
 workflows:
