@@ -2,6 +2,7 @@ import json
 import os
 import pprint
 import random
+import time
 from pathlib import Path
 
 import girder_client
@@ -16,6 +17,7 @@ import sklearn.cluster
 import sklearn.manifold
 import sklearn.metrics
 import umap
+from histomicstk.cli import utils as cli_utils
 from histomicstk.cli.utils import CLIArgumentParser
 
 
@@ -28,100 +30,109 @@ def annotation_to_shapely(annot, offset=(0, 0)):
     ])
 
 
-def main(args):  # noqa
-    print('\n>> CLI Parameters ...\n')
-    pprint.pprint(vars(args))
-    if not args.style or args.style.startswith('{#control'):
-        args.style = None
-    ts = large_image.open(args.image, style=args.style)
-    pprint.pprint(ts.metadata)
-    gc = girder_client.GirderClient(apiUrl=args.girderApiUrl)
-    gc.token = args.girderToken
-    annot = gc.get(f'annotation/{args.annotationID.strip()}')
-    print(f'Annotation has {len(annot["annotation"]["elements"])} elements')
-    totaldf = None
+def compute_tile(ts, tile, polys, frame, bidx, cyto_width):
+    if tile['tile'].shape[-1] in {2, 4} and bidx + 1 == tile['tile'].shape[-1]:
+        return None
+    labels = rasterio.features.rasterize(polys, out_shape=(tile['height'], tile['width']))
+    print('Getting features for tile '
+          f'{tile["tile_position"]["position"]}, frame {frame}, band {bidx}')
+    try:
+        df = histomicstk.features.compute_nuclei_features(
+            labels,
+            tile['tile'][:, :, bidx],
+            tile['tile'][:, :, bidx] if cyto_width else None,
+            morphometry_features_flag=not bidx and not frame,
+            cyto_width=cyto_width)
+    except Exception as exc:
+        print(f'Failed {exc}')
+        import traceback
+        print(traceback.format_exc())
+        return None
+    df = df.replace('NaN', 0)
+    df.fillna(0, inplace=True)
+    df = df.drop(df[
+        df['Identifier.Xmin'] > tile['width'] - tile['tile_overlap']['right']].index)
+    df = df.drop(df[
+        df['Identifier.Ymin'] > tile['height'] - tile['tile_overlap']['bottom']].index)
+    df = df.drop(df[
+        df['Identifier.Xmax'] < tile['tile_overlap']['left']].index)
+    df = df.drop(df[
+        df['Identifier.Ymax'] < tile['tile_overlap']['right']].index)
+    # Adjust these for tile position
+    for key in {'Identifier.Xmin', 'Identifier.Xmax',
+                'Identifier.CentroidX', 'Identifier.WeightedCentroidX'}:
+        df[key] += tile['x']
+    for key in {'Identifier.Ymin', 'Identifier.Ymax',
+                'Identifier.CentroidY', 'Identifier.WeightedCentroidY'}:
+        df[key] += tile['y']
+    df = df.rename(columns={
+        key: (f'{key}'
+              f'{(".band" + str(bidx)) if tile["tile"].shape[-1] > 1 else ""}'
+              f'{(".frame" + str(frame)) if ts.frames > 1 else ""}')
+        for key in df.columns.tolist()
+        if key.startswith(('Nucl', 'Cyto'))})
+    return df
+
+
+def process(ts, annot, args):  # noqa
+    import dask
+
+    indices = []
+    tasks = []
     # iterate over frames
+    bands = None
     for frame in range(ts.frames):
-        framedf = None
         for tile in ts.tileIterator(
                 tile_size=dict(width=4096, height=4096),
                 tile_overlap=dict(x=512, y=512),
                 frame=frame):
             print(tile)
-            labels = rasterio.features.rasterize(
-                [(pp, idx + 1) for idx, pp in enumerate(
-                    annotation_to_shapely(annot, (tile['x'], tile['y'])))],
-                out_shape=(tile['height'], tile['width']))
-            tiledf = None
+            tilebox = shapely.geometry.box(0, 0, tile['width'], tile['height'])
+            polys = [(pp, idx + 1) for idx, pp in enumerate(
+                annotation_to_shapely(annot, (tile['x'], tile['y'])))
+                if pp.intersects(tilebox)]
+            if bands is None:
+                bands = tile['tile'].shape[-1]
+                if bands in {2, 4}:
+                    bands -= 1
+                tile.release()
             # for each band
-            for bidx in range(tile['tile'].shape[-1]):
-                if tile['tile'].shape[-1] in {2, 4} and bidx + 1 == tile['tile'].shape[-1]:
-                    continue
-                print('Getting features for tile '
-                      f'{tile["tile_position"]["position"]}, frame {frame}, band {bidx}')
-                try:
-                    df = histomicstk.features.compute_nuclei_features(
-                        labels,
-                        tile['tile'][:, :, bidx],
-                        tile['tile'][:, :, bidx] if args.cyto_width else None,
-                        morphometry_features_flag=not bidx and not frame,
-                        cyto_width=args.cyto_width)
-                except Exception as exc:
-                    print(f'Failed {exc}')
-                    import traceback
-                    print(traceback.format_exc())
-                    continue
-                df = df.replace('NaN', 0)
-                df.fillna(0, inplace=True)
-                df = df.drop(df[
-                    df['Identifier.Xmin'] > tile['width'] - tile['tile_overlap']['right']].index)
-                df = df.drop(df[
-                    df['Identifier.Ymin'] > tile['height'] - tile['tile_overlap']['bottom']].index)
-                df = df.drop(df[
-                    df['Identifier.Xmax'] < tile['tile_overlap']['left']].index)
-                df = df.drop(df[
-                    df['Identifier.Ymax'] < tile['tile_overlap']['right']].index)
-                # Adjust these for tile position
-                for key in {'Identifier.Xmin', 'Identifier.Xmax',
-                            'Identifier.CentroidX', 'Identifier.WeightedCentroidX'}:
-                    df[key] += tile['x']
-                for key in {'Identifier.Ymin', 'Identifier.Ymax',
-                            'Identifier.CentroidY', 'Identifier.WeightedCentroidY'}:
-                    df[key] += tile['y']
-                df = df.rename(columns={
-                    key: (f'{key}'
-                          f'{(".band" + str(bidx)) if tile["tile"].shape[-1] > 1 else ""}'
-                          f'{(".frame" + str(frame)) if ts.frames > 1 else ""}')
-                    for key in df.columns.tolist()
-                    if key.startswith(('Nucl', 'Cyto'))})
-                if tiledf is None:
-                    tiledf = df
-                elif df is not None:
-                    df = df.drop(columns={
-                        key for key in df.columns
-                        if not key == 'Label' and
-                        not key.startswith('Nucl') and
-                        not key.startswith('Cyto')})
-                    tiledf = tiledf.merge(
-                        df, how='outer', on=list(set(tiledf.columns) & set(df.columns)))
-                if df is not None and tiledf is not None:
-                    print(f'Band data {df.shape}, collected {tiledf.shape}')
-            print(tiledf)
-            if tiledf is not None:
-                print(tiledf.columns.tolist())
-            if framedf is None:
-                framedf = tiledf
-            elif tiledf is not None:
-                df = tiledf.drop(tiledf[tiledf['Label'].isin(framedf['Label'])].index)
-                framedf = pd.concat((framedf, df))
-            if tiledf is not None and framedf is not None:
-                print(f'Tile data {tiledf.shape}, collected {framedf.shape}')
-        print(framedf)
-        if framedf is not None:
-            print(framedf.columns.tolist())
+            for bidx in range(bands):
+                indices.append((frame, tile['tile_position']['position'], bidx))
+                tasks.append(dask.delayed(compute_tile)(
+                    ts, tile, polys, frame, bidx, args.cyto_width))
+    tasks = dask.delayed(tasks).compute()
+    tiledfs = {}
+    for (frame, tileidx, _bidx), df in zip(indices, tasks):
+        if df is None:
+            continue
+        key = (frame, tileidx)
+        if key not in tiledfs:
+            tiledfs[key] = df
+        else:
+            df = df.drop(columns={
+                key for key in df.columns
+                if not key == 'Label' and
+                not key.startswith('Nucl') and
+                not key.startswith('Cyto')})
+            tiledfs[key] = tiledfs[key].merge(
+                df, how='outer', on=list(set(tiledfs[key].columns) & set(df.columns)))
+    framedfs = {}
+    for (frame, _tileidx), tiledf in tiledfs.items():
+        if tiledf is None:
+            continue
+        if frame not in framedfs:
+            framedfs[frame] = tiledf
+        else:
+            df = tiledf.drop(tiledf[tiledf['Label'].isin(framedfs[frame]['Label'])].index)
+            framedfs[frame] = pd.concat((framedfs[frame], df))
+    totaldf = None
+    for _frame, framedf in framedfs.items():
+        if framedf is None:
+            continue
         if totaldf is None:
             totaldf = framedf
-        elif framedf is not None:
+        else:
             framedf = framedf.drop(columns={
                 key for key in framedf.columns
                 if not key == 'Label' and
@@ -136,6 +147,10 @@ def main(args):  # noqa
     totaldf.reset_index()
     print(totaldf)
     print(totaldf.columns.tolist())
+    return totaldf
+
+
+def df_process(totaldf, annot, args):
     totaldf.to_csv(args.featureFile, index=False)
     df = totaldf.drop(columns={
         key for key in totaldf.columns if key.startswith(('Label', 'Identifier'))})
@@ -221,6 +236,26 @@ def main(args):  # noqa
         json.dump(annotation, annotation_file, separators=(',', ':'), sort_keys=False)
     with open(args.outputItemMetadata, 'w') as metadata_file:
         json.dump(meta, metadata_file, separators=(',', ':'), sort_keys=False)
+
+
+def main(args):
+    print('\n>> CLI Parameters ...\n')
+    pprint.pprint(vars(args))
+    if not args.style or args.style.startswith('{#control'):
+        args.style = None
+    ts = large_image.open(args.image, style=args.style)
+    pprint.pprint(ts.metadata)
+    gc = girder_client.GirderClient(apiUrl=args.girderApiUrl)
+    gc.token = args.girderToken
+    annot = gc.get(f'annotation/{args.annotationID.strip()}')
+    print(f'Annotation has {len(annot["annotation"]["elements"])} elements')
+    start_time = time.time()
+    c = cli_utils.create_dask_client(args)
+    print(c)
+    dask_setup_time = time.time() - start_time
+    print(f'Dask setup time = {cli_utils.disp_time_hms(dask_setup_time)}')
+    totaldf = process(ts, annot, args)
+    df_process(totaldf, annot, args)
 
 
 if __name__ == '__main__':
