@@ -31,8 +31,12 @@ def annotation_to_shapely(annot, offset=(0, 0)):
 
 
 def compute_tile(ts, tile, polys, frame, bidx, cyto_width):
+    if not len(polys):
+        return None
     if tile['tile'].shape[-1] in {2, 4} and bidx + 1 == tile['tile'].shape[-1]:
         return None
+    polys = [(shapely.affinity.translate(pp, -tile['x'], -tile['y']), idx)
+             for pp, idx in polys]
     labels = rasterio.features.rasterize(polys, out_shape=(tile['height'], tile['width']))
     print('Getting features for tile '
           f'{tile["tile_position"]["position"]}, frame {frame}, band {bidx}')
@@ -80,6 +84,7 @@ def process(ts, annot, args):  # noqa
     indices = []
     tasks = []
     # iterate over frames
+    basepolys = annotation_to_shapely(annot, (0, 0))
     bands = None
     for frame in range(ts.frames):
         for tile in ts.tileIterator(
@@ -87,10 +92,9 @@ def process(ts, annot, args):  # noqa
                 tile_overlap=dict(x=512, y=512),
                 frame=frame):
             print(tile)
-            tilebox = shapely.geometry.box(0, 0, tile['width'], tile['height'])
-            polys = [(pp, idx + 1) for idx, pp in enumerate(
-                annotation_to_shapely(annot, (tile['x'], tile['y'])))
-                if pp.intersects(tilebox)]
+            tilebox = shapely.geometry.box(
+                tile['x'], tile['y'], tile['x'] + tile['width'], tile['y'] + tile['height'])
+            polys = [(pp, idx + 1) for idx, pp in enumerate(basepolys) if pp.intersects(tilebox)]
             if bands is None:
                 bands = tile['tile'].shape[-1]
                 if bands in {2, 4}:
@@ -142,7 +146,7 @@ def process(ts, annot, args):  # noqa
                 framedf, how='outer', on=list(set(totaldf.columns) & set(framedf.columns)))
         if framedf is not None and totaldf is not None:
             print(f'Frame data {framedf.shape}, collected {totaldf.shape}')
-    print(list(totaldf['Label']))
+    print(len(list(totaldf['Label'])) + ' elements')
     totaldf[['Label']] = totaldf[['Label']].astype(int) - 1
     totaldf.reset_index()
     print(totaldf)
