@@ -146,7 +146,7 @@ def process(ts, annot, args):  # noqa
                 framedf, how='outer', on=list(set(totaldf.columns) & set(framedf.columns)))
         if framedf is not None and totaldf is not None:
             print(f'Frame data {framedf.shape}, collected {totaldf.shape}')
-    print(len(list(totaldf['Label'])) + ' elements')
+    print(f'{len(list(totaldf["Label"]))} elements')
     totaldf[['Label']] = totaldf[['Label']].astype(int) - 1
     totaldf.reset_index()
     print(totaldf)
@@ -155,28 +155,42 @@ def process(ts, annot, args):  # noqa
 
 
 def df_process(totaldf, annot, args):
+    start_time = time.time()
     totaldf.to_csv(args.featureFile, index=False)
+    print(f'Writing csv time {cli_utils.disp_time_hms(time.time() - start_time)}')
+    start_time = time.time()
     df = totaldf.drop(columns={
         key for key in totaldf.columns if key.startswith(('Label', 'Identifier'))})
+    scaler = sklearn.preprocessing.StandardScaler()
+    scaler.fit(df)
+    scaleddf = scaler.transform(df)
+    print(f'Transforming data for fit {cli_utils.disp_time_hms(time.time() - start_time)}')
+    start_time = time.time()
     # Calculate kmeans; if clusters is 0, guess
     if args.clusters < 2:
         lastsil = 10
         bestn = 2
         for n_clusters in range(2, 21):
-            model = sklearn.cluster.KMeans(
-                n_clusters=n_clusters, init='k-means++', max_iter=100, n_init=1)
-            labels = model.fit_predict(df)
-            sil_score = sklearn.metrics.silhouette_score(df, labels)
+            kmeans_labels = sklearn.cluster.KMeans(
+                n_clusters=n_clusters, init='k-means++', max_iter=100).fit_predict(scaleddf)
+            print('KMeans clustering total time '
+                  f'{cli_utils.disp_time_hms(time.time() - start_time)}')
+            sil_score = sklearn.metrics.silhouette_score(
+                scaleddf, kmeans_labels, sample_size=min(25000, scaleddf.shape[0]))
+            print('KMeans silhouette score total time '
+                  f'{cli_utils.disp_time_hms(time.time() - start_time)}')
             print('The average silhouette score for %i clusters is %0.4f' % (n_clusters, sil_score))
             if sil_score > lastsil:
                 bestn = n_clusters
                 break
             lastsil = sil_score
     else:
-        bestn = args.clusters
-    print(f'Doing k-means with {bestn} clusters.')
-    kmeans_labels = sklearn.cluster.KMeans(n_clusters=bestn).fit_predict(df)
+        print(f'Doing k-means with {bestn} clusters.')
+        kmeans_labels = sklearn.cluster.KMeans(
+            n_clusters=args.clusters, init='k-means++', max_iter=100).fit_predict(scaleddf)
+        print(f'KMeans clustering total time {cli_utils.disp_time_hms(time.time() - start_time)}')
     print(kmeans_labels)
+    start_time = time.time()
     # Add the cluster labels to the data we use with umap/tsne
     df['Cluster'] = kmeans_labels
     fit = umap.UMAP(
@@ -185,10 +199,14 @@ def df_process(totaldf, annot, args):
         # metric='wminkowski',
     )
     umapVal = fit.fit_transform(df)
+    print(f'UMAP time {cli_utils.disp_time_hms(time.time() - start_time)}')
     print(umapVal)
+    start_time = time.time()
     tsne = sklearn.manifold.TSNE(n_components=2, random_state=0)
     tsneVal = tsne.fit_transform(df)
+    print(f'TSNE time {cli_utils.disp_time_hms(time.time() - start_time)}')
     print(tsneVal)
+    start_time = time.time()
     # We want to add umap and cluster labels to dataframe and resave
     totaldf['Cluster'] = kmeans_labels
     totaldf['umap.x'] = umapVal[:, 0]
@@ -236,10 +254,15 @@ def df_process(totaldf, annot, args):
             'cli': Path(__file__).stem,
         },
     }
+    print(f'Prepare for save time {cli_utils.disp_time_hms(time.time() - start_time)}')
+    start_time = time.time()
     with open(args.outputAnnotationFile, 'w') as annotation_file:
         json.dump(annotation, annotation_file, separators=(',', ':'), sort_keys=False)
+    print(f'Save annotation time {cli_utils.disp_time_hms(time.time() - start_time)}')
+    start_time = time.time()
     with open(args.outputItemMetadata, 'w') as metadata_file:
         json.dump(meta, metadata_file, separators=(',', ':'), sort_keys=False)
+    print(f'Save metadata time {cli_utils.disp_time_hms(time.time() - start_time)}')
 
 
 def main(args):
@@ -259,7 +282,11 @@ def main(args):
     dask_setup_time = time.time() - start_time
     print(f'Dask setup time = {cli_utils.disp_time_hms(dask_setup_time)}')
     totaldf = process(ts, annot, args)
+    c.shutdown()
+    c.close()
+    print(f'Base processing time {cli_utils.disp_time_hms(time.time() - start_time)}')
     df_process(totaldf, annot, args)
+    print(f'Total time {cli_utils.disp_time_hms(time.time() - start_time)}')
 
 
 if __name__ == '__main__':
