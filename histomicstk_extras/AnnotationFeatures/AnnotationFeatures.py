@@ -168,22 +168,27 @@ def df_process(totaldf, annot, args):
     start_time = time.time()
     # Calculate kmeans; if clusters is 0, guess
     if args.clusters < 2:
-        lastsil = 10
+        lastinertia = None
+        firstInertiaSlope = None
         bestn = 2
         for n_clusters in range(2, 21):
-            kmeans_labels = sklearn.cluster.KMeans(
-                n_clusters=n_clusters, init='k-means++', max_iter=100).fit_predict(scaleddf)
+            clusterer = sklearn.cluster.KMeans(
+                n_clusters=n_clusters, init='k-means++', max_iter=100)
+            kmeans_labels = clusterer.fit_predict(scaleddf)
+            inertia = clusterer.inertia_
+            if lastinertia is not None:
+                inertiaSlope = inertia - lastinertia
+                print('inertiaSlope', inertiaSlope)
+                if firstInertiaSlope is None:
+                    firstInertiaSlope = inertiaSlope
+                elif abs(inertiaSlope) < abs(firstInertiaSlope / 4):
+                    break
+            bestn = n_clusters
+            lastinertia = inertia
             print('KMeans clustering total time '
                   f'{cli_utils.disp_time_hms(time.time() - start_time)}')
-            sil_score = sklearn.metrics.silhouette_score(
-                scaleddf, kmeans_labels, sample_size=min(25000, scaleddf.shape[0]))
-            print('KMeans silhouette score total time '
-                  f'{cli_utils.disp_time_hms(time.time() - start_time)}')
-            print('The average silhouette score for %i clusters is %0.4f' % (n_clusters, sil_score))
-            if sil_score > lastsil:
-                bestn = n_clusters
-                break
-            lastsil = sil_score
+        print(f'KMeans clustering total time with {bestn} clusters '
+              f'{cli_utils.disp_time_hms(time.time() - start_time)}')
     else:
         print(f'Doing k-means with {bestn} clusters.')
         kmeans_labels = sklearn.cluster.KMeans(
