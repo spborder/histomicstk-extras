@@ -17,7 +17,7 @@ RUN mkdir -p /opt && \
     cd /opt && \
     git clone https://github.com/girder/large_image && \
     cd large_image && \
-    # git checkout some-branch && \
+    # git checkout multi-single-band && \
     pip install .[all] -r requirements-dev.txt --find-links https://girder.github.io/large_image_wheels
 
 COPY . /opt/main

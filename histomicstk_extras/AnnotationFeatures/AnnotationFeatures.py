@@ -190,7 +190,7 @@ def df_process(totaldf, annot, args):
         print(f'KMeans clustering total time with {bestn} clusters '
               f'{cli_utils.disp_time_hms(time.time() - start_time)}')
     else:
-        print(f'Doing k-means with {bestn} clusters.')
+        print(f'Doing k-means with {args.clusters} clusters.')
         kmeans_labels = sklearn.cluster.KMeans(
             n_clusters=args.clusters, init='k-means++', max_iter=100).fit_predict(scaleddf)
         print(f'KMeans clustering total time {cli_utils.disp_time_hms(time.time() - start_time)}')
