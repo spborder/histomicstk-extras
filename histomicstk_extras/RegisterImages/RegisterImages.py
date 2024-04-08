@@ -49,6 +49,8 @@ def get_image(ts, sizeX, sizeY, frame, annotID, args, reduce):
         gc = girder_client.GirderClient(apiUrl=args.girderApiUrl)
         gc.token = args.girderToken
         annot = gc.get(f'annotation/{annotID.strip()}')
+        if annot['annotation']['elements'][0]['type'] == 'point':
+            return annot['annotation']['elements']
         img = (rasterio.features.rasterize(
             annotation_to_shapely(annot), out_shape=(sizeY, sizeX)) > 0).astype('bool')
         img = 255.0 * img
@@ -174,6 +176,51 @@ def transform_images(ts1, ts2, matrix, out2path=None, outmergepath=None):
             large_image_converter.convert(combopath, outmergepath)
 
 
+def register_points(args, points1, points2):
+    if not isinstance(points1, list) or not isinstance(points2, list):
+        msg = 'If one annotation is points, both images must specify a point annotation'
+        raise Exception(msg)
+    labels = {}
+    allpts = []
+    for key, points in [('1', points1), ('2', points2)]:
+        for idx, pt in enumerate(points):
+            if len(allpts) < idx + 1:
+                allpts.append({})
+            allpts[idx][key] = [pt['center'][0], pt['center'][1]]
+            label = pt.get('label', {}).get('value')
+            if label:
+                labels.setdefault(label, {})
+                labels[label][key] = [pt['center'][0], pt['center'][1]]
+    labels = {k: v for k, v in labels.items() if len(v) == 2}
+    if len(labels) >= 2:
+        print(f'Using {len(labels)} labeled points: {sorted(labels.keys())}')
+        allpts = list(labels.values())
+    else:
+        print(f'Using {len(labels)} corresponding points')
+        allpts = [pt for pt in allpts if len(pt) == 2]
+    mat = []
+    val2 = []
+    for pts in allpts:
+        pt1 = pts['1']
+        pt2 = pts['2']
+        val2.append(pt2[0])
+        val2.append(pt2[1])
+        if args.transform == 'AFFINE':
+            mat.append([pt1[0], pt1[1], 1, 0, 0, 0])
+            mat.append([0, 0, 0, pt1[0], pt1[1], 1])
+        else:
+            mat.append([pt1[0], pt1[1], 1, 0])
+            mat.append([pt1[1], -pt1[0], 0, 1])
+    proj = np.linalg.lstsq(mat, np.array([val2]).T, rcond=-1)[0].flatten().tolist()
+    print(proj, mat, val2)
+    if args.transform == 'AFFINE':
+        return np.array([[proj[0], proj[1], proj[2]], [proj[3], proj[4], proj[5]], [0, 0, 1]])
+    scale = (proj[0] ** 2 + proj[1] ** 2) ** 0.5
+    proj[0] /= scale
+    proj[1] /= scale
+    return np.array([[proj[0], proj[1], proj[2]], [-proj[1], proj[0], proj[3]], [0, 0, 1]])
+
+
 def main(args):
     print('\n>> CLI Parameters ...\n')
     pprint.pprint(vars(args))
@@ -204,17 +251,19 @@ def main(args):
         img1 = get_image(ts1, sizeX, sizeY, args.frame1, args.annotationID1, args, reduce)
         prog.message('Fetching second image')
         img2 = get_image(ts2, sizeX, sizeY, args.frame2, args.annotationID2, args, reduce)
-
-        prog.message('Registering')
-        sr = pystackreg.StackReg(getattr(
-            pystackreg.StackReg, args.transform, pystackreg.StackReg.AFFINE))
-        sr.register_transform(img1, img2)
-        prog.message('Registered')
-        print('Direct result')
-        print(sr.get_matrix())
-        full = sr.get_matrix().copy()
-        full[0][2] *= reduce
-        full[1][2] *= reduce
+        if isinstance(img1, list) or isinstance(img2, list):
+            full = register_points(args, img1, img2)
+        else:
+            prog.message('Registering')
+            sr = pystackreg.StackReg(getattr(
+                pystackreg.StackReg, args.transform, pystackreg.StackReg.AFFINE))
+            sr.register_transform(img1, img2)
+            prog.message('Registered')
+            print('Direct result')
+            print(sr.get_matrix())
+            full = sr.get_matrix().copy()
+            full[0][2] *= reduce
+            full[1][2] *= reduce
         print('Full result')
         print(full)
         print('Inverse')
