@@ -2,6 +2,9 @@
   "AnnotationFeatures": {
     "type": "python"
   },
+  "CropImage": {
+    "type": "python"
+  },
   "RegisterImages": {
     "type": "python"
   }

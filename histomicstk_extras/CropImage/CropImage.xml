@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<executable>
+  <category>HistomicsTK</category>
+  <title>Crop Image</title>
+  <description>Use the current frame, style, and ROI to create a smaller image</description>
+  <version>1.0.0</version>
+  <documentation-url>https://digitalslidearchive.github.io/HistomicsTK</documentation-url>
+  <license>Apache 2.0</license>
+  <contributor>David Manthey (Kitware Inc)</contributor>
+  <acknowledgements>This work is part of the Sarder Labs project.</acknowledgements>
+  <parameters>
+    <label>Inputs</label>
+    <description>Input parameters</description>
+    <image>
+      <name>image</name>
+      <label>Input Image</label>
+      <description>Input image</description>
+      <channel>input</channel>
+      <index>0</index>
+    </image>
+    <region>
+      <name>roi</name>
+      <label>ROI</label>
+      <description>Region of interest to crop. Must be a four element vector in the format "left, top, width, height" in the space of the base layer. Default value of "-1, -1, -1, -1" indicates that the whole image should be used.</description>
+      <longflag>roi</longflag>
+      <default>-1,-1,-1,-1</default>
+    </region>
+  </parameters>
+
+  <parameters>
+    <label>Outputs</label>
+    <description>Output parameters</description>
+    <image fileExtensions=".tiff">
+      <name>outputImage</name>
+      <longflag>outputImage</longflag>
+      <label>Output Image</label>
+      <description>The extracted image area</description>
+      <channel>output</channel>
+    </image>
+  </parameters>
+
+  <parameters advanced="true">
+    <label>Frame and Style</label>
+    <description>Frame parameters</description>
+    <string>
+      <name>frame</name>
+      <longflag>frame</longflag>
+      <label>Image Frame Index</label>
+      <description>Frame index in a multi-frame image</description>
+      <default>{#control:#current_image_frame#}</default>
+    </string>
+    <string>
+      <name>style</name>
+      <longflag>style</longflag>
+      <label>Image Style Options</label>
+      <description>Image style options for compositing a multi-frame image</description>
+      <default>{#control:#current_image_style#}</default>
+    </string>
+  </parameters>
+</executable>
