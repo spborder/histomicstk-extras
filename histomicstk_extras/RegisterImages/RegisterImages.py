@@ -5,6 +5,8 @@ import os
 import pprint
 import sys
 import tempfile
+import uuid
+import json
 
 import girder_client
 import histomicstk
@@ -17,6 +19,7 @@ import shapely
 import skimage.filters
 import skimage.morphology
 import skimage.transform
+import skimage.measure
 import yaml
 from histomicstk.cli.utils import CLIArgumentParser
 from histomicstk.preprocessing.color_deconvolution.stain_color_map import \
@@ -33,8 +36,103 @@ def annotation_to_shapely(annot, reduce=1):
         if element['type'] == 'polyline' and element['closed']
     ])
 
+def make_annotation_from_shape(shape_list,name,properties)->dict:
+    """
+    Take a Shapely shape object (MultiPolygon or Polygon or GeometryCollection) and return the corresponding annotation 
+    """
+    annotation_dict = {
+        "annotation": {
+            "name": name,
+            "elements": []
+        }
+    }
+    for shape in shape_list:
+        
+        if shape.geom_type=='Polygon' and shape.is_valid:
+            # Exterior "shell" coordinates
+            coords = list(shape.exterior.coords)
+            """
+            # Ignoring holes for tissue
+            hole_coords = list(shape.interiors)
+            hole_list = []
+            for h in hole_coords:
+                hole_list.append([
+                    [i[0],i[1]]
+                    for i in list(h.coords)
+                ])
+            """
+            hole_list = []
+            annotation_dict['annotation']['elements'].append({
+                'type': 'polyline',
+                'points': [list(i)+[0] for i in coords],
+                'holes': hole_list,
+                'id': uuid.uuid4().hex[:24],
+                'closed': True,
+                'user': properties
+            })
 
-def get_image(ts, sizeX, sizeY, frame, annotID, args, reduce):
+    return annotation_dict
+
+def get_tissue_mask(img:np.array,brightfield:bool)->np.array:
+    """
+    Getting mask of tissue to constrain annotations
+
+    """
+    img = np.squeeze(np.mean(img,axis=-1))
+
+    if brightfield:
+        img = 255-img
+
+    threshold_val = skimage.filters.threshold_otsu(img)
+    tissue_mask = img <= threshold_val
+
+    tissue_mask = skimage.morphology.remove_small_holes(tissue_mask,area_threshold = 150)
+
+    return tissue_mask
+
+def create_annotation(img:np.array, scale_factor:int)->dict:
+    """
+    Converting mask to large_image annotations
+    """
+
+    labeled_mask = skimage.measure.label(img>0)
+    pieces = np.unique(labeled_mask).tolist()
+    tissue_shape_list = []
+    for piece in pieces[1:]:
+        piece_contours = skimage.measure.find_contours(labeled_mask==piece)
+
+        for contour in piece_contours:
+
+            poly_list = [(i[1]*scale_factor,i[0]*scale_factor) for i in contour]
+            if len(poly_list)>2:
+                obj_polygon = shapely.geometry.Polygon(poly_list)
+
+                if not obj_polygon.is_valid:
+                    made_valid = shapely.validation.make_valid(obj_polygon)
+
+                    if made_valid.geom_type=='Polygon':
+                        tissue_shape_list.append(made_valid)
+                    elif made_valid.geom_type in ['MultiPolygon','GeometryCollection']:
+                        for g in made_valid.geoms:
+                            if g.geom_type=='Polygon':
+                                tissue_shape_list.append(g)
+                else:
+                    tissue_shape_list.append(obj_polygon)
+
+    merged_mask = shapely.ops.unary_union(tissue_shape_list)
+    if merged_mask.geom_type=='Polygon':
+        merged_mask = [merged_mask]
+    elif merged_mask.geom_type in ['MultiPolygon','GeometryCollection']:
+        merged_mask = merged_mask.geoms
+
+    annotation = make_annotation_from_shape(merged_mask,'Registration Intermediate',{})
+
+    return annotation
+
+
+
+
+def get_image(ts, sizeX, sizeY, frame, annotID, args, reduce, brightfield,save_intermediate):
     regionparams = {'format': large_image.constants.TILE_FORMAT_NUMPY}
     try:
         regionparams['frame'] = int(frame)
@@ -45,6 +143,11 @@ def get_image(ts, sizeX, sizeY, frame, annotID, args, reduce):
                     ts.metadata['channelmap']['DAPI'] * ts.metadata['IndexStride']['IndexC'])
         except Exception:
             pass
+    
+    regionparams['output'] = dict(maxWidth=ts.sizeX // reduce, maxHeight=ts.sizeY // reduce)
+    img = ts.getRegion(**regionparams)[0]
+    tissue_mask = get_tissue_mask(img,brightfield)
+
     if annotID:
         gc = girder_client.GirderClient(apiUrl=args.girderApiUrl)
         gc.token = args.girderToken
@@ -82,7 +185,16 @@ def get_image(ts, sizeX, sizeY, frame, annotID, args, reduce):
             if args.smallObject:
                 img = skimage.morphology.remove_small_objects(img, args.smallObject)
             img = 255.0 * img
-    return img
+
+    img *= np.uint8(tissue_mask)
+
+    if save_intermediate:
+        tissue_mask_annotation = create_annotation(tissue_mask)
+        img_annotation = create_annotation(img)
+
+        return img, [tissue_mask_annotation,img_annotation]
+    else:
+        return img, []
 
 
 def transform_images(ts1, ts2, matrix, out2path=None, outmergepath=None):
@@ -229,12 +341,28 @@ def main(args):
     if not args.style2 or args.style2.startswith('{#control'):
         args.style2 = None
     with ProgressHelper('Register Images', 'Registering images', args.progress) as prog:
+        
+        base_plugin_dir = '/mnt/girder_worker/'+os.listdir('/mnt/girder_worker')[0]+'/'
+        # Downloading image items to this location
+
+        gc = girder_client.GirderClient(apiUrl = args.girderApiUrl)
+        gc.setToken(args.girderToken)
+
+        image_1_name = gc.get(f'/file/{args.image1}')['name']
+        gc.downloadFile(args.image1,base_plugin_dir+image_1_name)
+
+        image_2_name = gc.get(f'/file/{args.image2}')['name']
+        gc.downloadFile(args.image2,base_plugin_dir+image_2_name)
+
+        image_1_path = base_plugin_dir+image_1_name
+        image_2_path = base_plugin_dir+image_2_name
+                
         prog.message('Opening first image')
-        ts1 = large_image.open(args.image1, style=args.style1)
+        ts1 = large_image.open(image_1_path, style=args.style1)
         print('Image 1:')
         pprint.pprint(ts1.metadata)
         prog.message('Opening second image')
-        ts2 = large_image.open(args.image2, style=args.style2)
+        ts2 = large_image.open(image_2_path, style=args.style2)
         print('Image 2:')
         pprint.pprint(ts2.metadata)
         maxRes = max(ts1.sizeX, ts1.sizeY, ts2.sizeX, ts2.sizeY)
@@ -248,9 +376,28 @@ def main(args):
         print(f'Registration size {sizeX} x {sizeY}')
 
         prog.message('Fetching first image')
-        img1 = get_image(ts1, sizeX, sizeY, args.frame1, args.annotationID1, args, reduce)
+        img1, intermediates1 = get_image(ts1, sizeX, sizeY, args.frame1, args.annotationID1, args, reduce,args.image1_brightfield,args.save_intermediate_annotations)
         prog.message('Fetching second image')
-        img2 = get_image(ts2, sizeX, sizeY, args.frame2, args.annotationID2, args, reduce)
+        img2, intermediates2 = get_image(ts2, sizeX, sizeY, args.frame2, args.annotationID2, args, reduce,args.image2_brightfield,args.save_intermediate_annotations)
+        
+        # Posting intermediate        
+        if args.save_intermediate_annotations:
+
+            _ = gc.post(f'/annotation/item/{args.image1}',
+                             data = json.dumps(intermediates1),
+                             headers = {
+                                 'X-HTTP-Method': 'POST',
+                                 'Content-Type':'application/json'
+                             })
+            
+            _ = gc.post(f'/annotation/item/{args.image2}',
+                        data = json.dumps(intermediates2),
+                        headers = {
+                            'X-HTTP-Method':'POST',
+                            'Content-Type':'application/json'
+                        })
+
+        
         if isinstance(img1, list) or isinstance(img2, list):
             full = register_points(args, img1, img2)
         else:
